@@ -1,7 +1,11 @@
-from app.database import engine
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException
 from app.database import engine
 from app.models import Base
+from app.database import get_db
+from sqlalchemy.orm import Session
+from app.models import User
+from app.schemas import UserCreate
+
 
 app = FastAPI()
 
@@ -20,4 +24,43 @@ def greet_user(data: NameRequest):
 @app.on_event("startup")
 def start_db():
     Base.metadata.create_all(bind=engine)
+
+@app.post("/users")
+def create_user(user: UserCreate, db: Session = Depends(get_db)):
+
+    # 1️⃣ check if email already exists
+    existing_user = db.query(User).filter(User.email == user.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered"
+        )
+
+    # 2️⃣ create new user
+    new_user = User(name=user.name, email=user.email)
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return new_user
+
+@app.get("/users")
+def get_users(db: Session = Depends(get_db)):
+    return db.query(User).all()
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db)):
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+    
+    db.delete(user)
+    db.commit()
+    
+    return {"message": "User deleted successfully"}
 
